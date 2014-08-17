@@ -1,0 +1,127 @@
+My Peer review 1
+---
+
+The data used in this study is a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+```{r}
+# Define some options for knitr
+knitr::opts_chunk$set(tidy=FALSE, fig.path='figures/')
+
+# Load the data w/ relative filepath
+activity<-read.csv(file="C:/Users/james_000/Documents/R/ActiveData/activity.csv",stringsAsFactors=FALSE)
+
+# Change the date variable to proper class
+activity$date<-as.Date(activity$date)
+```
+
+The dataset is in a csv file format. There are three variables included in this dataset: 
+
+* steps (`steps`): Number of steps taking in a 5-minute interval (missing values are coded as NA)
+* date (`date`): The date on which the measurement was taken in YYYY-MM-DD format
+* interval (`inteval`): Identifier for the 5-minute interval in which measurement was taken
+
+Here is a sample of the data:
+
+```{r}
+# First 5 data
+head(activity)
+```
+
+##What is the mean number of steps taken per day?
+```{r summarize}
+# First, let's summarize the total steps taken by day without the NA values
+totalsteps<-aggregate(formula=steps~date,data=activity,FUN=sum,na.rm=TRUE)
+
+# Mean
+meansteps<-mean(totalsteps$steps)
+
+# Median
+mediansteps <- median(totalsteps$steps)
+```
+
+The subject took a mean of `r meansteps` and a median of `r mediansteps` per day. The number of steps taken daily by the subject is summarized in the histogram below:
+
+```{r histogram1}
+# Create a histogram using ggplot2
+library(ggplot2)
+qplot(x=date, y=steps,data=subset(activity, complete.cases(activity)),stat='summary', fun.y=sum, geom='bar') +
+        labs(title='Number of Steps Taken per Day',
+        y='Total Steps per Day', x='Date')
+```
+
+##What is the average daily activity pattern?
+
+To answer thiis question, we will find the mean steps taken each interval.
+```{r}
+# Summarize the data with mean steps per interval
+activity_interval<-aggregate(formula= steps~interval,data=activity,FUN=mean,na.rm=TRUE)
+
+# Finding which interval has the max # of steps
+max_steps<-activity_interval[which(activity_interval$steps==max(activity_interval$steps)),]
+```
+
+The interval labelled as `r activity_interval$interval[104]` (the 104th interval of each day) contains the max number of steps averaged across all the days sampled: `r activity_interval$steps[104]`. The following figure will show the average number of steps taken during each interval:
+
+```{r linegraph1}
+steps_per_interval<-qplot(x=interval,y= steps,data=subset(activity,complete.cases(activity)),stat='summary',fun.y=mean,geom="line") +
+        labs(title='Average Steps Taken Each Interval (across the days)',y='Average Steps per Interval', x='Interval')
+
+steps_per_interval
+```
+
+##Imputing missing values
+```{r}
+# Counting the number of missing values
+NAtotal<- sum(!complete.cases(activity))
+stepNAs<-sum(is.na(activity$steps))
+dateNAs<-sum(is.na(activity$date))
+intervalNAs<-sum(is.na(activity$intervals))
+```
+
+The dataset contains a total of `r NAtotal` missing values. `r stepNAs` are steps, `r dateNAs` are dates, and `r intervalNAs` are intervals. Clearly showing that only steps were not recorded at times.
+
+###Inputation strategy
+Without doing any additional analysis, I believe there seems to be more variation in the steps taken per day, than the steps taken at intervals looking at the graphs above. Using this assumption, I will complete the missing cases with the average number of steps from the corresponding interval (with rounding to avoid fractional steps).
+
+```{r}
+# Adding a column to the previously calculated means w/ rounded steps
+activity_interval$input<-floor(activity_interval$steps)
+
+# Merge this with the dataset
+inputactivity<-merge(activity,activity_interval[,c('interval','input')],by='interval')
+
+# Replacing the NA values
+inputactivity$steps<- ifelse(is.na(inputactivity$steps),inputactivity$input,inputactivity$steps)
+
+# Remove the inputed column
+inputactivity<-inputactivity[,1:3]
+```
+Let's do the same summarization as we did for the two questions above and compare.
+
+```{r}
+# Sum of steps per date
+input_totalsteps<-aggregate(formula=steps~date,data=inputactivity,FUN= sum)
+
+# Mean
+mean_inputsteps<-mean(input_totalsteps$steps)
+# Median
+median_inputsteps<-median(input_totalsteps$steps)
+```
+The new mean after the inputed values is `r mean_inputsteps` and the new median is `r mean_inputsteps`. The new histogram is below:
+
+```{r histogram2}
+qplot(x=date, y=steps,data=inputactivity,stat='summary', fun.y=sum, geom='bar') +
+        labs(title='Number of Steps Taken per Day\n (w/ filled values)',
+        y='Total Steps per Day', x='Date')
+```
+
+##Are there differences in activity patterns between weekdays and weekends?
+
+```{r linegraph2}
+# Add a column in the dataset that distinguishes weekday from weekend using weekdays()
+inputactivity$week<-ifelse(weekdays(inputactivity$date)!="Saturday"& weekdays(inputactivity$date)!="Sunday","Weekday","Weekend")
+
+
+# Create the plot
+steps_per_interval %+% inputactivity + facet_grid(week~.) +
+  labs(title='Average of steps taken each interval across the days, \n given the part of the week')
